@@ -1,11 +1,12 @@
+import threading
 from threading import Lock
 from time import time
 
+import redis
+from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.interval import IntervalTrigger
 from flask import Flask, render_template, request
 from flask_socketio import SocketIO
-import redis
-from apscheduler.schedulers.background import BackgroundScheduler
 
 app = Flask(__name__)
 socketio = SocketIO(app)
@@ -42,10 +43,15 @@ class UserManager:
             current_time = time()
             to_cleanup = [sid for sid, last_time in self.user_timeout.items() if
                           current_time - last_time > TIMEOUT_DURATION]
-            for sid in to_cleanup:
-                self.remove_session(sid)
-                socketio.close_room(sid)
-                self.cleanup_user_session(sid)
+
+        # Run cleanup in a separate thread
+        threading.Thread(target=self.cleanup_sessions, args=(to_cleanup,)).start()
+
+    def cleanup_sessions(self, sessions):
+        for sid in sessions:
+            self.remove_session(sid)
+            socketio.close_room(sid)
+            cleanup_user_session(sid)
 
 
 user_manager = UserManager()
@@ -63,6 +69,7 @@ def handle_connect():
 
 @socketio.on('heartbeat')
 def handle_heartbeat():
+    print("heartbeat")
     user_manager.update_heartbeat(request.sid)
 
 
@@ -73,10 +80,9 @@ def handle_register(data):
     user_manager.update_heartbeat(session_id)
 
     with redis_client.pipeline() as pipe:
-        pipe.hset('user_session_map', user_id, session_id)
-        pipe.hset('session_user_map', session_id, user_id)
-        if not redis_client.sismember('connected_users', user_id):
-            pipe.sadd('connected_users', user_id)
+        pipe.hset('user_mapping', f'user:{user_id}', session_id)
+        pipe.hset('user_mapping', f'session:{session_id}', user_id)
+        if not redis_client.hexists('user_mapping', f'user:{user_id}'):
             pipe.rpush('user_queue', user_id)
         pipe.execute()
 
@@ -91,14 +97,14 @@ def handle_disconnect():
 
 
 def cleanup_user_session(session_id):
-    user_id = redis_client.hget('session_user_map', session_id)
+    user_id = redis_client.hget('user_mapping', f'session:{session_id}')
     if user_id:
         user_id = user_id.decode()
         with redis_client.pipeline() as pipe:
-            pipe.srem('connected_users', user_id)
+            print(user_id)
             pipe.lrem('user_queue', 0, user_id)
-            pipe.hdel('user_session_map', user_id)
-            pipe.hdel('session_user_map', session_id)
+            pipe.hdel('user_mapping', f'user:{user_id}')
+            pipe.hdel('user_mapping', f'session:{session_id}')
             pipe.execute()
         update_queue_positions(status='disconnected')
 
@@ -107,16 +113,13 @@ def update_queue_positions(status=None):
     all_users = redis_client.lrange('user_queue', 0, -1)
     for idx, uid_bytes in enumerate(all_users, 1):
         uid = uid_bytes.decode()
-        session_id = redis_client.hget('user_session_map', uid)
+        session_id = redis_client.hget('user_mapping', f'user:{uid}')
         if session_id:
             new_position = 0 if idx <= MAX_ACTIVE_USERS else idx - MAX_ACTIVE_USERS
             socketio.emit('queue_update', {'position': new_position, 'status': status}, room=session_id.decode())
 
 
-# Create the interval trigger without misfire_grace_time
 trigger = IntervalTrigger(seconds=10)
-
-# Add the job to the scheduler with misfire_grace_time specified in the add_job call
 scheduler.add_job(
     user_manager.check_timeouts,
     trigger,
