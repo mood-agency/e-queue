@@ -26,17 +26,20 @@
     }
 
     socket.on('connect', function () {
-        // Try to get 'id' from the URL query string; generate a new ID if none is found
         let userId = getQueryParam('id') || 'user_' + Math.random().toString(36).substr(2, 9);
-
-        // Emit the user ID to the server
         socket.emit('register', {userId: userId});
         console.log('Connected to the server with ID:', userId);
 
-        // Emit heartbeat every 10 seconds
-        setInterval(function() {
-            socket.emit('heartbeat');
-        }, 10000);
+        // Start the Web Worker to handle heartbeats
+        if (window.Worker) {
+            const worker = new Worker('{{ url_for("static", filename="js/heartbeat_worker.js") }}');
+         worker.postMessage({ start: true, interval: 10000 });  // Start with 10-second intervals
+            worker.onmessage = function(e) {
+                socket.emit('heartbeat');
+            };
+        } else {
+            console.log('Web Workers are not supported in your browser.');
+        }
     });
 
     socket.on('queue_update', function (data) {
@@ -51,12 +54,6 @@
     socket.on('disconnect', function () {
         console.log('Disconnected from the server.');
     });
-
-    socket.on('update_active_users', function (data) {
-        console.log('Active users updated:', data.active_count);
-        // Update any relevant display/UI elements here.
-    });
-
 </script>
 </body>
 </html>
