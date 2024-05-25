@@ -4,56 +4,11 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Ticket Queue System</title>
-    <script src="https://cdn.socket.io/4.0.0/socket.io.min.js"></script>
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            margin: 40px;
-            text-align: center;
-        }
-    </style>
+    <!-- Include the JavaScript file using Flask's url_for function -->
+    <script src="{{ url_for('static', filename='js/ticket-queue.js') }}"></script>
 </head>
 <body>
-<h1>Welcome to the Ticket Queue!</h1>
-<p id="queuePosition">Waiting for queue update...</p>
-
-<script>
-    let socket = io();
-
-    function getQueryParam(name) {
-        const urlParams = new URLSearchParams(window.location.search);
-        return urlParams.get(name);
-    }
-
-    socket.on('connect', function () {
-        let userId = getQueryParam('id') || 'user_' + Math.random().toString(36).substr(2, 9);
-        socket.emit('register', {userId: userId});
-        console.log('Connected to the server with ID:', userId);
-
-        // Start the Web Worker to handle heartbeats
-        if (window.Worker) {
-            const worker = new Worker('{{ url_for("static", filename="js/heartbeat_worker.js") }}');
-         worker.postMessage({ start: true, interval: 10000 });  // Start with 10-second intervals
-            worker.onmessage = function(e) {
-                socket.emit('heartbeat');
-            };
-        } else {
-            console.log('Web Workers are not supported in your browser.');
-        }
-    });
-
-    socket.on('queue_update', function (data) {
-        console.log('Queue update received:', data);
-        if (data.position === 0) {
-            document.getElementById('queuePosition').textContent = 'Buy your Ticket!!!';
-        } else {
-            document.getElementById('queuePosition').textContent = 'Your current position in the queue is: ' + data.position;
-        }
-    });
-
-    socket.on('disconnect', function () {
-        console.log('Disconnected from the server.');
-    });
-</script>
+<h1>Welcome</h1>
+<p>Buy your ticket.</p>
 </body>
 </html>
