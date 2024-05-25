@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ticket Queue System</title>
+    <script src="https://cdn.socket.io/4.0.0/socket.io.min.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 40px;
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+<h1>Welcome to the Ticket Queue!</h1>
+<p id="queuePosition">Waiting for queue update...</p>
+
+<script>
+    let socket = io();
+
+    function getQueryParam(name) {
+        const urlParams = new URLSearchParams(window.location.search);
+        return urlParams.get(name);
+    }
+
+    socket.on('connect', function () {
+        // Try to get 'id' from the URL query string; generate a new ID if none is found
+        let userId = getQueryParam('id') || 'user_' + Math.random().toString(36).substr(2, 9);
+
+
+        // Emit the user ID to the server
+        socket.emit('register', {userId: userId});
+        console.log('Connected to the server with ID:', userId);
+    });
+
+    socket.on('queue_update', function (data) {
+        console.log('Queue update received:', data);
+        if (data.position === 0) {
+            document.getElementById('queuePosition').textContent = 'Buy your Ticket!!!';
+        } else {
+            document.getElementById('queuePosition').textContent = 'Your current position in the queue is: ' + data.position;
+        }
+    });
+
+    socket.on('disconnect', function () {
+        console.log('Disconnected from the server.');
+    });
+
+    socket.on('update_active_users', function (data) {
+        console.log('Active users updated:', data.active_count);
+        // Update any relevant display/UI elements here.
+    });
+
+</script>
+</body>
+</html>
