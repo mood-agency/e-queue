@@ -1,6 +1,7 @@
 from threading import Lock
 from time import time
 
+from apscheduler.triggers.interval import IntervalTrigger
 from flask import Flask, render_template, request
 from flask_socketio import SocketIO
 import redis
@@ -112,7 +113,17 @@ def update_queue_positions(status=None):
             socketio.emit('queue_update', {'position': new_position, 'status': status}, room=session_id.decode())
 
 
-scheduler.add_job(user_manager.check_timeouts, 'interval', seconds=10)
+# Create the interval trigger without misfire_grace_time
+trigger = IntervalTrigger(seconds=10)
+
+# Add the job to the scheduler with misfire_grace_time specified in the add_job call
+scheduler.add_job(
+    user_manager.check_timeouts,
+    trigger,
+    coalesce=True,
+    max_instances=1,
+    misfire_grace_time=30  # 30 seconds grace period
+)
 
 if __name__ == '__main__':
     try:
