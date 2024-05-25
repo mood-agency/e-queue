@@ -29,10 +29,14 @@
         // Try to get 'id' from the URL query string; generate a new ID if none is found
         let userId = getQueryParam('id') || 'user_' + Math.random().toString(36).substr(2, 9);
 
-
         // Emit the user ID to the server
         socket.emit('register', {userId: userId});
         console.log('Connected to the server with ID:', userId);
+
+        // Emit heartbeat every 10 seconds
+        setInterval(function() {
+            socket.emit('heartbeat');
+        }, 10000);
     });
 
     socket.on('queue_update', function (data) {
