@@ -4,16 +4,35 @@ e-queue is a python/redis scalable queue system that allows users to join a queu
 first-come-first-serve basis.
 
 ## Install
-Clonet the repository and install the dependencies
-`git clone 
+
+### Install Redis on Windows:
+https://redis.io/docs/latest/operate/oss_and_stack/install/install-redis/install-redis-on-windows/
+
+### Install Redis Insight(GUI):
+https://redis.io/insight/?utm_source=redisinsight&utm_medium=website&utm_campaign=install_redisinsight#insight-form
+
+## Run Redis Server
+From WSL run:
+`sudo service redis-server start`
+
+## Run App Server
+To run the server, you need to have the following installed:
+`uvicorn app:app --host localhost --port 8000 --reload`
+
+## Clone the repository and install the dependencies
+Clone the repository and install the dependencies
+`git clone https://github.com/mood-agency/e-queue.git`
 
 `pip install -r requirements.txt`
 
 `pip install flask-socketio`
 `pip install eventlet`
 
-To run the server, run
+### Development
 `python app.py`
+
+### Production
+`gunicorn app:app --worker-class gevent --bind localhost:8000`
 
 ## Websocket and Worker connect and retry logic
 ```mermaid
