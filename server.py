@@ -2,16 +2,25 @@ import time
 from threading import Lock
 
 import redis
+from apscheduler.schedulers.background import BackgroundScheduler
 from flask import Flask, render_template, request
 from flask_socketio import SocketIO
 
 app = Flask(__name__)
 socketio = SocketIO(app)
-redis_client = redis.Redis(host='localhost', port=6379, db=0)
+
+# Set up a Redis connection pool
+redis_pool = redis.ConnectionPool(host='localhost', port=6379, db=0)
+redis_client = redis.Redis(connection_pool=redis_pool)
+
 max_active_users = 2  # Limit of active users who can purchase tickets at once
 user_timeout = {}  # Dictionary to track last heartbeat
 timeout_lock = Lock()
 timeout_duration = 20  # Timeout duration in seconds (e.g., 20 seconds)
+
+# Initialize the scheduler with your Flask app's context
+scheduler = BackgroundScheduler()
+scheduler.start()
 
 
 @app.route('/')
@@ -38,6 +47,7 @@ def handle_register(data):
     with timeout_lock:
         user_timeout[session_id] = time.time()
 
+    # Using Redis through the connection pool
     redis_client.hset('user_session_map', user_id, session_id)
     redis_client.hset('session_user_map', session_id, user_id)
 
@@ -79,20 +89,20 @@ def cleanup_user_session(session_id):
 
 
 def check_timeouts():
-    while True:
-        time.sleep(10)  # Interval for checking timeouts
+    with timeout_lock:
         current_time = time.time()
-        to_cleanup = []
-        with timeout_lock:
-            for sid, last_time in user_timeout.items():
-                if current_time - last_time > timeout_duration:
-                    to_cleanup.append(sid)
+        to_cleanup = [sid for sid, last_time in user_timeout.items() if current_time - last_time > timeout_duration]
         for sid in to_cleanup:
+            del user_timeout[sid]
             socketio.close_room(sid)
             handle_disconnect(sid)
 
 
-socketio.start_background_task(check_timeouts)
+# Add job to scheduler
+scheduler.add_job(check_timeouts, 'interval', seconds=10)
 
 if __name__ == '__main__':
-    socketio.run(app, debug=True)
+    try:
+        socketio.run(app, debug=True)
+    finally:
+        scheduler.shutdown()  # Properly shutdown the scheduler when app stops
