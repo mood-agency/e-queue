@@ -1,4 +1,5 @@
 import threading
+from datetime import datetime
 from threading import Lock
 from time import time
 
@@ -89,9 +90,6 @@ def index():
     return render_template('index.html')
 
 
-from datetime import datetime
-
-
 @app.route('/status')
 def status():
     users_status = []
@@ -135,6 +133,16 @@ def save_heartbeat_data(user_id, timestamp):
 @socketio.on('connect')
 def handle_connect():
     user_manager.update_heartbeat(request.sid)
+
+
+@app.route('/api/queue_status/<user_id>')
+def queue_status(user_id):
+    # This should check if the session_id is in the queue
+    queue_position = redis_client.hget('user_mapping', f'session:{user_id}')
+    if queue_position:
+        return {'in_queue': True, 'position': int(queue_position.decode())}, 200
+    else:
+        return {'in_queue': False}, 200
 
 
 @socketio.on('heartbeat')

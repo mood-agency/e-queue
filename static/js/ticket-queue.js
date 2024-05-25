@@ -1,22 +1,22 @@
 // ticket-queue.js
 (function () {
     document.addEventListener('DOMContentLoaded', function () {
-        // Create the necessary HTML elements
         const container = document.createElement('div');
-        // container.innerHTML = `
-        //     <h1>Welcome to the Ticket Queue!</h1>
-        //     <p id="queuePosition">Waiting for queue update...</p>
-        // `;
         document.body.appendChild(container);
 
-        // Load the Socket.IO library
         const script = document.createElement('script');
         script.src = 'https://cdn.socket.io/4.0.0/socket.io.min.js';
         script.onload = initializeQueue;
         document.head.appendChild(script);
 
         function initializeQueue() {
-            let socket = io();
+            let socket = io('', {
+                reconnection: true,         // Enable automatic reconnection
+                reconnectionAttempts: 3,    // Maximum number of reconnection attempts
+                reconnectionDelay: 1000,    // Initial delay for reconnection (ms)
+                reconnectionDelayMax: 5000, // Maximum delay for reconnection (ms)
+                timeout: 20000              // Timeout for reconnection attempts (ms)
+            });
 
             function getQueryParam(name) {
                 const urlParams = new URLSearchParams(window.location.search);
@@ -28,19 +28,28 @@
                 socket.emit('register', {userId: userId});
                 console.log('Connected to the server with ID:', userId);
 
-                // Create a Web Worker using a Blob and a data URL
+                // Start heartbeat worker
                 const workerCode = `
                     let heartbeatInterval = null;
 
+                    function sendHeartbeat() {
+                        self.postMessage({ type: 'heartbeat' });
+                    }
+
+                    function startHeartbeat(interval) {
+                        heartbeatInterval = setInterval(sendHeartbeat, interval);
+                    }
+
+                    function stopHeartbeat() {
+                        clearInterval(heartbeatInterval);
+                        self.close();
+                    }
+
                     self.onmessage = function (event) {
                         if (event.data.type === 'start') {
-                            const interval = event.data.interval;
-                            heartbeatInterval = setInterval(function () {
-                                self.postMessage({ type: 'heartbeat' });
-                            }, interval);
+                            startHeartbeat(event.data.interval);
                         } else if (event.data.type === 'stop') {
-                            clearInterval(heartbeatInterval);
-                            self.close();
+                            stopHeartbeat();
                         }
                     };
                 `;
@@ -51,11 +60,7 @@
                 worker.onmessage = function (event) {
                     if (event.data.type === 'heartbeat') {
                         socket.emit('heartbeat');
-
-                        // Create a new Date object
                         let now = new Date();
-
-                        // Format the date and time
                         let dateString = now.toLocaleDateString('en-GB', {
                             day: '2-digit', month: 'short', year: 'numeric'
                         }) + ' ' + now.toLocaleTimeString('en-GB', {
@@ -65,43 +70,38 @@
                             second: '2-digit',
                             fractionalSecondDigits: 3
                         });
-
                         console.log('Heartbeat sent to the server at:', dateString);
                     }
                 };
-
                 worker.postMessage({type: 'start', interval: 10000});
+            });
 
-                // Stop the Web Worker on disconnect
-                socket.on('disconnect', function () {
-                    console.log('Disconnected from the server.');
-                    worker.postMessage({type: 'stop'});
-                    worker.terminate();
-                });
+            socket.on('reconnect_attempt', () => {
+                console.log('Attempting to reconnect to the server...');
+            });
+
+            socket.on('disconnect', function () {
+                console.log('Disconnected from the server.');
+                worker.postMessage({type: 'stop'});
             });
 
             socket.on('queue_update', function (data) {
                 console.log('Queue update received:', data);
-
                 if (data.position !== 0) {
-                    // Clear the entire body content
                     document.body.innerHTML = '';
 
-                    // Fetch the splash screen HTML and insert it
                     fetch('static/splash.html')
                         .then(response => response.text())
                         .then(html => {
                             document.body.innerHTML = html;
 
-                            // Optionally, update part of the fetched HTML with the position
                             let positionElement = document.getElementById('queuePosition');
                             if (positionElement) {
-                                positionElement.textContent = data.position;
+                                positionElement.textContent = 'Your current position in the queue is: ' + data.position;
                             }
                         })
                         .catch(error => {
                             console.error('Error loading the splash screen:', error);
-                            // Fallback content if the fetch fails
                             document.body.textContent = 'Failed to load the splash screen.';
                         });
                 }
