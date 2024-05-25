@@ -4,15 +4,18 @@ e-queue is a python/redis scalable queue system that allows users to join a queu
 first-come-first-serve basis.
 
 ## Install
+Clonet the repository and install the dependencies
+`git clone 
+
+`pip install -r requirements.txt`
 
 `pip install flask-socketio`
-
 `pip install eventlet`
 
 To run the server, run
 `python app.py`
 
-# Websocket and Worker connect and retry logic
+## Websocket and Worker connect and retry logic
 ```mermaid
 graph TD
     A[Start] --> B[Load Socket.IO library]
@@ -43,9 +46,9 @@ graph TD
     V --> D
     S --> W[End]
 ```
-## Splash
+## Splash Screen
 
-You can modify the splash page by editing the `static/splash.html` file.
+Showed when the user get into the queue. You can modify the splash page by editing the `static/splash.html` file.
 
 ## Uploading Worker
 
