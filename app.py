@@ -1,5 +1,6 @@
 import os
 import threading
+from datetime import datetime
 from threading import Lock
 from time import time
 
@@ -13,15 +14,18 @@ from flask_socketio import SocketIO, disconnect, emit
 app = Flask(__name__)
 socketio = SocketIO(app)
 
-# Set up a Redis connection pool and client
-redis_pool = redis.ConnectionPool(host='localhost', port=6379, db=0)
-redis_client = redis.Redis(connection_pool=redis_pool)
-
 load_dotenv()
 # Constants
 MAX_ACTIVE_USERS = os.getenv('MAX_ACTIVE_USERS')
 TIMEOUT_DURATION = os.getenv('TIMEOUT_DURATION')  # in seconds
-print(MAX_ACTIVE_USERS, TIMEOUT_DURATION)
+REDIS_HOST = os.getenv('REDIS_HOST')
+REDIS_PORT = os.getenv('REDIS_PORT')
+REDIS_DB = os.getenv('REDIS_DB')
+
+# Set up a Redis connection pool and client
+redis_pool = redis.ConnectionPool(host=REDIS_HOST, port=REDIS_PORT, db=REDIS_DB)
+redis_client = redis.Redis(connection_pool=redis_pool)
+
 # Scheduler
 scheduler = BackgroundScheduler()
 scheduler.start()
@@ -90,9 +94,6 @@ user_manager = UserManager()
 @app.route('/')
 def index():
     return render_template('index.html')
-
-
-from datetime import datetime
 
 
 @app.route('/status')
