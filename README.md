@@ -15,10 +15,6 @@ https://redis.io/insight/?utm_source=redisinsight&utm_medium=website&utm_campaig
 From WSL run:
 `sudo service redis-server start`
 
-## Run App Server
-To run the server, you need to have the following installed:
-`uvicorn app:app --host localhost --port 8000 --reload`
-
 ## Clone the repository and install the dependencies
 Clone the repository and install the dependencies
 `git clone https://github.com/mood-agency/e-queue.git`
@@ -26,6 +22,7 @@ Clone the repository and install the dependencies
 `pip install -r requirements.txt`
 
 `pip install flask-socketio`
+
 `pip install eventlet`
 
 ### Development
@@ -33,6 +30,12 @@ Clone the repository and install the dependencies
 
 ### Production
 `gunicorn app:app --worker-class gevent --bind localhost:8000`
+
+## Configuration
+Use `.env` file to configure the application. You can copy the `.env.example` file and rename it to `.env`.
+You can configure:
+* The number of users that can be served at the same time.
+* The timeout duration for the user to be served.
 
 ## Websocket and Worker connect and retry logic
 ```mermaid
@@ -70,44 +73,52 @@ graph TD
 Showed when the user get into the queue. You can modify the splash page by editing the `static/splash.html` file.
 
 ## Uploading Worker
+We use a Cloudflare worker to check the user status in the queue and to send the user to the splash page if the user is in the queue.
 
 ### Set Up your Local Environment
 
-`npm install -g @cloudflare/wrangler`
+`npm install -g wrangler`
+
+After installing wrangler, you need to log in to your Cloudflare account:
 `wrangler login`
 
 ### Create your worker
 
-`wrangler generate my-worker`
-`cd my-worker`
+`wrangler generate cloudflare-worker`
+`cd cloudflare-worker`
 
 ### Configure Your Worker
 
-Edit the wrangler.toml file in your project directory to specify your account details and settings:
+Edit the wrangler.toml file in your project directory to specify KV settings:
 
-* account_id: This can be found in your Cloudflare dashboard under the "Workers" tab.
-* zone_id (optional): This is necessary if you are deploying your worker to a route associated with a specific domain.
-* route (optional): If you want your worker to serve traffic for a specific route, specify it here.
+### Create the KV
+From the cloudflare dashboard, got to `Workers and Pages -> KV -> Create Namespace`
+
+After creating the KV, you can get the KV id from the KV settings page and add it to the wrangler.toml file.
 
 ```toml
-name = "my-worker"
-type = "javascript"
+name = "cloudflare-worker"
+main = "src/index.ts"
+compatibility_date = "2024-05-25"
 
-account_id = "your_account_id"
-workers_dev = true  # Deploys to workers.dev subdomain; set to false if deploying to a custom route
-
-# Uncomment and fill these out if deploying to a custom domain
-# zone_id = "your_zone_id"
-# route = "https://yourdomain.com/*"
+kv_namespaces = [
+  { binding = "SESSION_KV", id = "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" }
+]
 ```
-
-### Preview and Test
-
-`wrangler preview`
 
 ### Deploy
 
 `wrangler publish`
+
+### Route the Worker
+From the cloudflare dashboard, go to `Workers and Pages -> Add Route` an `*` to Route and select the worker you just created.
+
+
+## Development
+
+### Preview and Test
+
+`wrangler dev cloudflare-worker/src/index.js`
 
 ## Debugging
 
@@ -119,4 +130,12 @@ To debug the queue status go to `http://localhost:5000/queue_status`
 
 To debug the heartbeats go to `http://localhost:5000/debug_heartbeats?user_id=<user_id>`. You can find
 the user_id in the queue status page.
+
+
+## Testing
+`python test.py` creates 100 users and adds them to the queue it raise an exception in case a user gets disconnected from the server. It should handle all the users without disconnections.
+
+## TODO
+[] Test reject user is already connected.
+
 

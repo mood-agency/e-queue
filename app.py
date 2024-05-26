@@ -1,13 +1,14 @@
+import os
 import threading
-from datetime import datetime
 from threading import Lock
 from time import time
 
 import redis
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.interval import IntervalTrigger
-from flask import Flask, render_template, request
-from flask_socketio import SocketIO
+from dotenv import load_dotenv
+from flask import Flask, render_template, request, jsonify
+from flask_socketio import SocketIO, disconnect, emit
 
 app = Flask(__name__)
 socketio = SocketIO(app)
@@ -16,10 +17,11 @@ socketio = SocketIO(app)
 redis_pool = redis.ConnectionPool(host='localhost', port=6379, db=0)
 redis_client = redis.Redis(connection_pool=redis_pool)
 
+load_dotenv()
 # Constants
-MAX_ACTIVE_USERS = 2
-TIMEOUT_DURATION = 20  # in seconds
-
+MAX_ACTIVE_USERS = os.getenv('MAX_ACTIVE_USERS')
+TIMEOUT_DURATION = os.getenv('TIMEOUT_DURATION')  # in seconds
+print(MAX_ACTIVE_USERS, TIMEOUT_DURATION)
 # Scheduler
 scheduler = BackgroundScheduler()
 scheduler.start()
@@ -90,39 +92,16 @@ def index():
     return render_template('index.html')
 
 
+from datetime import datetime
+
+
 @app.route('/status')
 def status():
-    users_status = []
-    all_users = redis_client.lrange('user_queue', 0, -1)
-    for index, user_id in enumerate(all_users, start=1):
-        user_id = user_id.decode()
-        session_id = redis_client.hget('user_mapping', f'user:{user_id}')
-        if session_id:
-            session_id = session_id.decode()
-            last_heartbeat = redis_client.get(f"heartbeat:{session_id}")
-            if last_heartbeat:
-                last_heartbeat = float(last_heartbeat.decode())
-                formatted_heartbeat = datetime.fromtimestamp(last_heartbeat).strftime("%d %B %Y %H:%M:%S.%f")[:-3]
-            else:
-                last_heartbeat = 0  # Set last_heartbeat to 0 if not available
-                formatted_heartbeat = "N/A"
-        else:
-            session_id = "N/A"
-            last_heartbeat = 0  # Set last_heartbeat to 0 if not available
-            formatted_heartbeat = "N/A"
+    # Directly call the api_status function and get the JSON data
+    response = api_status()  # This is a Flask Response object
+    users_status = response.get_json()  # Extract JSON data from response
 
-        queue_position = index - MAX_ACTIVE_USERS if index > MAX_ACTIVE_USERS else 0
-
-        users_status.append({
-            "user_id": user_id,
-            "session_id": session_id,
-            "last_heartbeat": formatted_heartbeat,  # Use formatted_heartbeat instead of last_heartbeat
-            "queue_position": queue_position
-        })
-
-    # Sort users_status based on queue_position in ascending order
-    users_status.sort(key=lambda x: x["queue_position"])
-
+    # Now pass this data to your template
     return render_template('status.html', users_status=users_status)
 
 
@@ -135,14 +114,102 @@ def handle_connect():
     user_manager.update_heartbeat(request.sid)
 
 
-@app.route('/api/queue_status/<user_id>')
-def queue_status(user_id):
+@app.route('/api/status')
+def api_status():
+    users_status = []
+    all_users = redis_client.lrange('user_queue', 0, -1)
+    for index, user_id in enumerate(all_users, start=1):
+        user_id = user_id.decode()
+        session_id = redis_client.hget('user_mapping', f'user:{user_id}')
+        if session_id:
+            session_id = session_id.decode()
+            last_heartbeat = redis_client.get(f"heartbeat:{session_id}")
+            if last_heartbeat:
+                last_heartbeat = float(last_heartbeat.decode())
+                formatted_heartbeat = datetime.fromtimestamp(last_heartbeat).strftime("%d %B %Y %H:%M:%S.%f")[:-3]
+            else:
+                formatted_heartbeat = "N/A"
+        else:
+            session_id = "N/A"
+            formatted_heartbeat = "N/A"
+
+        queue_position = index - MAX_ACTIVE_USERS if index > MAX_ACTIVE_USERS else 0
+
+        users_status.append({
+            "user_id": user_id,
+            "session_id": session_id,
+            "last_heartbeat": formatted_heartbeat,
+            "queue_position": queue_position
+        })
+
+    return jsonify(users_status)
+
+
+@app.route('/api/debug_heartbeats')
+def api_debug_heartbeats():
+    user_id = request.args.get('user_id')
+    if user_id:
+        heartbeat_data = redis_client.hgetall(f"debug_heartbeats:{user_id}")
+        heartbeats = []
+        for timestamp, status in heartbeat_data.items():
+            timestamp = float(timestamp.decode())
+            formatted_timestamp = datetime.fromtimestamp(timestamp).strftime("%d %B %Y %H:%M:%S.%f")[:-3]
+            heartbeats.append({
+                "timestamp": timestamp,
+                "formatted_timestamp": formatted_timestamp,
+                "status": status.decode()
+            })
+
+        return jsonify(heartbeats)
+    return jsonify({"error": "User ID not provided"}), 400
+
+
+@app.route('/api/user_session_active/<user_id>')
+def user_session_active(user_id):
+    session_id = redis_client.hget('user_mapping', f'user:{user_id}')
+    if session_id:
+        session_id = session_id.decode()
+        last_heartbeat = redis_client.get(f"heartbeat:{session_id}")
+        if last_heartbeat:
+            last_heartbeat = float(last_heartbeat)
+            current_time = time()
+            if (current_time - last_heartbeat) <= TIMEOUT_DURATION:
+                return {'user_id': user_id, 'session_id': session_id, 'active': True}, 200
+            else:
+                return {'user_id': user_id, 'session_id': session_id, 'active': False}, 200
+        else:
+            # No heartbeat found, consider session inactive
+            return {'user_id': user_id, 'session_id': session_id, 'active': False}, 200
+    else:
+        # No session found for this user
+        return {'user_id': user_id, 'session_id': 'N/A', 'active': False}, 200
+
+
+@app.route('/api/queue_status/<session_id>')
+def queue_status(session_id):
     # This should check if the session_id is in the queue
-    queue_position = redis_client.hget('user_mapping', f'session:{user_id}')
+    queue_position = redis_client.hget('user_mapping', f'session:{session_id}')
     if queue_position:
         return {'in_queue': True, 'position': int(queue_position.decode())}, 200
     else:
         return {'in_queue': False}, 200
+
+
+@app.route('/debug_heartbeats')
+def debug_heartbeats():
+    # Get user_id from request parameters
+    user_id = request.args.get('user_id')
+    if user_id:
+        # Call the API function directly
+        api_response = api_debug_heartbeats()  # This should return a Flask Response object
+        if api_response.status_code == 200:
+            heartbeats = api_response.get_json()  # Extract JSON data from the response
+            return render_template('debug_heartbeats.html', user_id=user_id, heartbeats=heartbeats)
+        else:
+            # Handle possible errors or no data found
+            return render_template('debug_heartbeats.html', user_id=user_id, heartbeats=[], error="No data found.")
+    else:
+        return "User ID not provided", 400
 
 
 @socketio.on('heartbeat')
@@ -157,13 +224,29 @@ def handle_heartbeat():
         save_heartbeat_data(user_id, timestamp)
 
 
+@socketio.on('connect')
+def handle_connect():
+    print(f'New connection attempt from SID: {request.sid}')
+
+
 @socketio.on('register')
 def handle_register(data):
     user_id = data['userId']
     session_id = request.sid
     user_manager.update_heartbeat(session_id)
 
+    existing_session_id = redis_client.hget('user_mapping', f'user:{user_id}')
+    if existing_session_id:
+        # There's already a session for this user, refuse the new connection
+        print(
+            f"Rejecting new connection for user {user_id} because an existing session {existing_session_id.decode()} is active.")
+        # Optionally send a message back to the client before disconnecting
+        emit('error', {'message': 'Multiple connections are not allowed.'}, room=session_id)
+        disconnect(session_id)
+        return  # Stop further processing
+
     with redis_client.pipeline() as pipe:
+        # Set the new session mapping as no existing session is found
         pipe.hset('user_mapping', f'user:{user_id}', session_id)
         pipe.hset('user_mapping', f'session:{session_id}', user_id)
         if not redis_client.hexists('user_mapping', f'user:{user_id}'):
@@ -172,7 +255,6 @@ def handle_register(data):
 
     timestamp = time()
     save_heartbeat_data(user_id, timestamp)
-
     update_queue_positions()
 
 
@@ -181,29 +263,6 @@ def handle_disconnect():
     session_id = request.sid
     user_manager.remove_session(session_id)
     cleanup_user_session(session_id)
-
-
-@app.route('/debug_heartbeats')
-def debug_heartbeats():
-    user_id = request.args.get('user_id')
-    if user_id:
-        heartbeat_data = redis_client.hgetall(f"debug_heartbeats:{user_id}")
-        heartbeats = []
-        for timestamp, status in heartbeat_data.items():
-            timestamp = float(timestamp.decode())
-            formatted_timestamp = datetime.fromtimestamp(timestamp).strftime("%d %B %Y %H:%M:%S.%f")[:-3]
-            heartbeats.append({
-                "timestamp": timestamp,
-                "formatted_timestamp": formatted_timestamp,
-                "status": status.decode()
-            })
-
-        # Sort heartbeats based on timestamp in descending order
-        heartbeats.sort(key=lambda x: x["timestamp"], reverse=True)
-
-        return render_template('debug_heartbeats.html', user_id=user_id, heartbeats=heartbeats)
-    else:
-        return "User ID not provided", 400
 
 
 trigger = IntervalTrigger(seconds=10)
