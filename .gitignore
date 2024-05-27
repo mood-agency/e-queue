@@ -5,3 +5,4 @@
 /cloudflare-worker/.wrangler
 .idea/
 .venv/
+.env
