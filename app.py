@@ -9,15 +9,15 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.interval import IntervalTrigger
 from dotenv import load_dotenv
 from flask import Flask, render_template, request, jsonify
-from flask_socketio import SocketIO, disconnect, emit
+from flask_socketio import SocketIO
 
 app = Flask(__name__)
 socketio = SocketIO(app)
 
 load_dotenv()
 # Constants
-MAX_ACTIVE_USERS = os.getenv('MAX_ACTIVE_USERS')
-TIMEOUT_DURATION = os.getenv('TIMEOUT_DURATION')  # in seconds
+MAX_ACTIVE_USERS = int(os.getenv('MAX_ACTIVE_USERS'))
+TIMEOUT_DURATION = int(os.getenv('TIMEOUT_DURATION'))  # in seconds
 REDIS_HOST = os.getenv('REDIS_HOST')
 REDIS_PORT = os.getenv('REDIS_PORT')
 REDIS_DB = os.getenv('REDIS_DB')
@@ -84,7 +84,6 @@ def update_queue_positions(status=None):
         session_id = redis_client.hget('user_mapping', f'user:{uid}')
         if session_id:
             new_position = 0 if idx <= MAX_ACTIVE_USERS else idx - MAX_ACTIVE_USERS
-            print()
             socketio.emit('queue_update', {'position': new_position, 'status': status}, room=session_id.decode())
 
 
@@ -237,14 +236,14 @@ def handle_register(data):
     user_manager.update_heartbeat(session_id)
 
     existing_session_id = redis_client.hget('user_mapping', f'user:{user_id}')
-    if existing_session_id:
-        # There's already a session for this user, refuse the new connection
-        print(
-            f"Rejecting new connection for user {user_id} because an existing session {existing_session_id.decode()} is active.")
-        # Optionally send a message back to the client before disconnecting
-        emit('error', {'message': 'Multiple connections are not allowed.'}, room=session_id)
-        disconnect(session_id)
-        return  # Stop further processing
+    # if existing_session_id:
+    #     # There's already a session for this user, refuse the new connection
+    #     print(
+    #         f"Rejecting new connection for user {user_id} because an existing session {existing_session_id.decode()} is active.")
+    #     # Optionally send a message back to the client before disconnecting
+    #     emit('error', {'message': 'Multiple connections are not allowed.'}, room=session_id)
+    #     disconnect(session_id)
+    #     return  # Stop further processing
 
     with redis_client.pipeline() as pipe:
         # Set the new session mapping as no existing session is found
