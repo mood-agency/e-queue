@@ -34,6 +34,7 @@ Clone the repository and install the dependencies
 ## Configuration
 Use `.env` file to configure the application. You can copy the `.env.example` file and rename it to `.env`.
 You can configure:
+* The Redis server host, port, db and password.
 * The number of users that can be served at the same time.
 * The timeout duration for the user to be served.
 
