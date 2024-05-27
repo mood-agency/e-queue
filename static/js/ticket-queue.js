@@ -86,8 +86,16 @@
             });
 
             socket.on('queue_update', function (data) {
-                console.log('Queue update received:', data);
-                if (data.position !== 0) {
+                console.log('Queue update received:', data.position);
+
+                if (data.position === 0) {
+                    document.body.innerHTML = "<div id='info'></div>";
+                    let positionElement = document.getElementById('info');
+                    if (positionElement) {
+                        positionElement.textContent = 'Buy your Ticket';
+                    }
+
+                } else {
                     document.body.innerHTML = '';
 
                     fetch('static/splash.html')
@@ -97,7 +105,7 @@
 
                             let positionElement = document.getElementById('queuePosition');
                             if (positionElement) {
-                                positionElement.textContent = 'Your current position in the queue is: ' + data.position;
+                                positionElement.textContent = data.position;
                             }
                         })
                         .catch(error => {
